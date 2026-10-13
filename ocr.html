@@ -39,10 +39,10 @@
             box-shadow: 0 0 0 1000px rgba(0,0,0,0.35);
         }
         .live-preview-text {
-            position: absolute; bottom: 8px; left: 0; width: 100%;
+            position: absolute; bottom: 0; left: 0; width: 100%;
             text-align: center; color: #00ff00; font-weight: bold;
-            font-size: 18px; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.5);
-            padding: 4px 0;
+            font-size: 20px; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.7);
+            padding: 8px 4px; min-height: 40px; word-break: break-all;
         }
         .btn-action {
             width: 100%; padding: 15px; color: white; border: none;
@@ -78,14 +78,14 @@
     <div id="camera-container">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="scan-guide"></div>
-        <div class="live-preview-text" id="livePreview">👀 Đang dò chữ...</div>
+        <div class="live-preview-text" id="livePreview">👀 Lia camera đến tem...</div>
     </div>
 
-    <button class="btn-action btn-lock" id="lockBtn" onclick="lockCurrentText()">🎯 CHỐT DÒNG NÀY (HOẶC SỬA TAY)</button>
+    <button class="btn-action btn-lock" id="lockBtn" onclick="lockCurrentText()">🎯 CHỐT DÒNG NÀY</button>
 
     <div class="form-group">
-        <label>Cỡ x giàng chuẩn bị Lưu *</label>
-        <textarea id="resultBox" placeholder="Chữ chốt/sửa tay sẽ hiển thị ở đây..." onfocus="pauseScanForEdit()"></textarea>
+        <label>Cỡ x giàng chuẩn bị Lưu * (Có thể sửa tay)</label>
+        <textarea id="resultBox" placeholder="Bấm nút CHỐT DÒNG NÀY để đưa chữ xuống đây..." onfocus="pauseScanForEdit()"></textarea>
     </div>
 
     <button class="btn-action btn-save" onclick="saveToGoogleSheets()">💾 SAVE CSDL</button>
@@ -96,7 +96,7 @@
 <canvas id="hiddenCanvas" style="display:none;"></canvas>
 
 <script>
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxjJiOWEtk_1cFeDqJnlXpzW0Fud7JH8wfdy7bFnEXUJzmrw6ymzdXt51sDqPF2bHXS/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbySkQqO6fiC--o3WhUp8JgcyLgLQk5mmkNElCSC5M1B4jNxGLfUyCzrFmrGtbpBJoYj/exec';
 
 let rawStyleData = [];
 let selectedSeason = localStorage.getItem('saved_season') || '';
@@ -118,7 +118,7 @@ window.onload = async function() {
         const json = await res.json();
         rawStyleData = json.data || [];
         renderSeasons();
-        status.innerText = "👀 Camera đang dò chữ liên tục...";
+        status.innerText = "👀 Camera đang dò chữ realtime...";
         status.style.color = "green";
     } catch (e) {
         status.innerText = "❌ Lỗi tải CSDL!";
@@ -147,7 +147,7 @@ async function initCamera() {
 function startAutoScan() {
     isScanning = true;
     if (scanInterval) clearInterval(scanInterval);
-    scanInterval = setInterval(captureAndAnalyze, 800); // Quét nhanh liên tục 0.8s
+    scanInterval = setInterval(captureAndAnalyze, 700); // Quét realtime liên tục 0.7s
 }
 
 function pauseScanForEdit() {
@@ -160,7 +160,7 @@ function pauseScanForEdit() {
 function lockCurrentText() {
     if (currentDetectedText) {
         document.getElementById('resultBox').value = currentDetectedText;
-        document.getElementById('status').innerText = "🎯 Đã chốt chữ! Bạn có thể sửa tay hoặc bấm SAVE.";
+        document.getElementById('status').innerText = "🎯 Đã chốt chữ! Bạn có thể chỉnh sửa hoặc bấm SAVE.";
         document.getElementById('status').style.color = "green";
     } else {
         alert("Chưa bắt được chữ nào, vui lòng soi rõ tem hơn!");
@@ -171,8 +171,8 @@ function resetScanState() {
     document.getElementById('resultBox').blur();
     document.getElementById('resultBox').value = '';
     currentDetectedText = "";
-    document.getElementById('livePreview').innerText = "👀 Đang dò chữ...";
-    document.getElementById('status').innerText = "👀 Camera đang dò chữ liên tục...";
+    document.getElementById('livePreview').innerText = "👀 Lia camera đến tem...";
+    document.getElementById('status').innerText = "👀 Camera đang dò chữ realtime...";
     document.getElementById('status').style.color = "green";
     startAutoScan();
 }
@@ -214,11 +214,13 @@ async function captureAndAnalyze() {
         const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 2);
 
         if (lines.length > 0) {
-            let cleanFirstLine = lines[0].replace(/[\r\n]+/g, " ").trim();
-            currentDetectedText = cleanFirstLine;
-            
-            // Hiển thị chữ quét realtime trực tiếp ngay dưới khung camera
-            document.getElementById('livePreview').innerText = "Đang thấy: " + cleanFirstLine;
+            // LẤY ĐÚNG VÀ ĐỦ DÒNG ĐẦU TIÊN & XÓA KÝ TỰ RÁC (<, >, |, ~, *) Ở ĐẦU VÀ CUỐI
+            let cleanFirstLine = lines[0].replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').trim();
+
+            if (cleanFirstLine.length >= 2) {
+                currentDetectedText = cleanFirstLine;
+                document.getElementById('livePreview').innerText = cleanFirstLine;
+            }
         }
     } catch (e) {}
 }
@@ -279,7 +281,7 @@ function updateDonHangDropdown() {
 
 async function saveToGoogleSheets() {
     const donHang = document.getElementById('donHangSelect').value;
-    let vanBan = document.getElementById('resultBox').value.replace(/[\r\n]+/g, " ").trim();
+    let vanBan = document.getElementById('resultBox').value.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').trim();
     const status = document.getElementById('status');
 
     if (!donHang) { alert("Vui lòng chọn Đơn hàng!"); return; }
@@ -298,7 +300,6 @@ async function saveToGoogleSheets() {
         status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG VỀ SHEET!";
         status.style.color = "green";
 
-        // Sau khi lưu xong tự khôi phục luồng quét liên tục ngay
         setTimeout(() => {
             resetScanState();
         }, 1000);
