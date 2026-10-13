@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>XTL - Quét OCR Tự Động 100%</title>
+    <title>XTL - Chụp Ảnh Bóc Tách Cỡ</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <style>
         * { box-sizing: border-box; }
@@ -15,7 +15,7 @@
             background: white; padding: 16px; border-radius: 12px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 500px; margin: auto;
         }
-        .form-group { margin-bottom: 15px; }
+        .form-group { margin-bottom: 12px; }
         label { display: block; font-weight: bold; margin-bottom: 6px; color: #222; font-size: 18px; }
         select {
             width: 100%; padding: 12px; border: 2px solid #007bff;
@@ -23,7 +23,7 @@
         }
         .season-container { display: flex; flex-wrap: wrap; gap: 8px; }
         .btn-season {
-            flex: 1 1 calc(50% - 8px); padding: 12px; border: 2px solid #007bff;
+            flex: 1 1 calc(50% - 8px); padding: 10px; border: 2px solid #007bff;
             background: white; color: #007bff; border-radius: 8px; font-weight: bold; font-size: 16px;
         }
         .btn-season.active { background: #007bff; color: white; }
@@ -32,29 +32,30 @@
             position: relative; width: 100%; height: 210px; background: #000;
             border-radius: 10px; overflow: hidden; margin-bottom: 12px;
         }
-        video { width: 100%; height: 100%; object-fit: cover; }
+        video, img#frozenImage {
+            width: 100%; height: 100%; object-fit: cover; display: block;
+        }
+        img#frozenImage { display: none; }
+        
         .scan-guide {
             position: absolute; top: 25%; left: 8%; width: 84%; height: 50%;
-            border: 3px dashed #00ff00; pointer-events: none;
-            box-shadow: 0 0 0 1000px rgba(0,0,0,0.35);
+            border: 2px dashed #00ff00; pointer-events: none;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.4);
         }
-        .live-preview-text {
-            position: absolute; bottom: 0; left: 0; width: 100%;
-            text-align: center; color: #00ff00; font-weight: bold;
-            font-size: 22px; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.8);
-            padding: 10px 4px; min-height: 45px;
-        }
+        
         .btn-action {
-            width: 100%; padding: 15px; color: white; border: none;
+            width: 100%; padding: 14px; color: white; border: none;
             border-radius: 8px; font-weight: bold; font-size: 18px; cursor: pointer;
         }
-        .btn-save { background: #28a745; margin-top: 10px; }
+        .btn-capture { background: #17a2b8; margin-bottom: 10px; }
+        .btn-save { background: #28a745; }
+        
         #resultBox {
-            width: 100%; height: 60px; padding: 10px; border: 2px solid #28a745;
+            width: 100%; height: 55px; padding: 10px; border: 2px solid #28a745;
             border-radius: 8px; font-size: 24px; font-weight: bold; color: #155724; background: #e8f8f5;
             text-align: center;
         }
-        #status { margin-top: 12px; text-align: center; font-weight: bold; font-size: 16px; line-height: 1.4; }
+        #status { margin-top: 10px; text-align: center; font-weight: bold; font-size: 16px; }
     </style>
 </head>
 <body>
@@ -63,27 +64,29 @@
     <div class="form-group">
         <label>Mùa SX</label>
         <div id="seasonButtons" class="season-container">
-            <span style="color:#777;">⏳ Đang tải Mùa SX...</span>
+            <span style="color:#777;">⏳ Đang tải...</span>
         </div>
     </div>
 
     <div class="form-group">
         <label>Đơn hàng *</label>
         <select id="donHangSelect" onchange="onDonHangChange()">
-            <option value="">-- Chọn Mùa SX trước --</option>
+            <option value="">-- Chọn Mùa SX --</option>
         </select>
     </div>
 
-    <label>Rọi camera vào dòng Cỡ x Giàng:</label>
+    <label>Căn dòng Cỡ x Giàng vào khung xanh:</label>
     <div id="camera-container">
         <video id="webcam" autoplay playsinline muted></video>
-        <div class="scan-guide"></div>
-        <div class="live-preview-text" id="livePreview">👀 Đang quét tìm cỡ chuẩn...</div>
+        <img id="frozenImage" alt="Ảnh đã chụp">
+        <div class="scan-guide" id="scanGuide"></div>
     </div>
 
+    <button class="btn-action btn-capture" id="captureBtn" onclick="handleCaptureOrRetake()">📸 CHỤP ĐỂ BÓC TÁCH CỠ</button>
+
     <div class="form-group">
-        <label>Cỡ x giàng tự động khớp chuẩn *</label>
-        <input type="text" id="resultBox" readonly placeholder="Hệ thống tự động trả về cỡ chuẩn...">
+        <label>Cỡ x giàng tự động bóc tách *</label>
+        <input type="text" id="resultBox" readonly placeholder="Bấm nút chụp để bóc tách cỡ...">
     </div>
 
     <button class="btn-action btn-save" onclick="saveToGoogleSheets()">💾 SAVE CSDL</button>
@@ -100,12 +103,12 @@ let rawStyleData = [];
 let selectedSeason = localStorage.getItem('saved_season') || '';
 let savedDonHang = localStorage.getItem('saved_donhang') || '';
 let currentValidSizes = [];
-let isScanning = true;
-let scanInterval = null;
+let isFrozen = false;
+let worker = null;
 
 window.onload = async function() {
     initCamera();
-    startAutoScan();
+    initTesseractWorker();
     
     const status = document.getElementById('status');
     status.innerText = "⏳ Đang kết nối CSDL...";
@@ -116,44 +119,62 @@ window.onload = async function() {
         const json = await res.json();
         rawStyleData = json.data || [];
         renderSeasons();
-        status.innerText = "⚡ Camera đang tự động lọc cỡ chuẩn...";
+        status.innerText = "👀 Đã sẵn sàng chụp!";
         status.style.color = "green";
     } catch (e) {
-        status.innerText = "❌ Lỗi tải CSDL!";
+        status.innerText = "❌ Lỗi kết nối CSDL!";
         status.style.color = "red";
     }
 };
+
+async function initTesseractWorker() {
+    try {
+        worker = await Tesseract.createWorker('eng');
+        await worker.setParameters({
+            tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/ ',
+        });
+    } catch(e) {}
+}
 
 async function initCamera() {
     const video = document.getElementById('webcam');
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: "environment" } }, audio: false
+            video: { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
         });
         video.srcObject = stream;
     } catch (err) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             video.srcObject = stream;
-        } catch (e) {
-            document.getElementById('status').innerText = "⚠️ Mở bằng Safari/Chrome để bật Camera!";
-            document.getElementById('status').style.color = "orange";
-        }
+        } catch (e) {}
     }
 }
 
-function startAutoScan() {
-    isScanning = true;
-    if (scanInterval) clearInterval(scanInterval);
-    scanInterval = setInterval(captureAndAnalyze, 600);
+function handleCaptureOrRetake() {
+    const btn = document.getElementById('captureBtn');
+    if (!isFrozen) {
+        // Thực hiện BẮT ẢNH TĨNH & BÓC TÁCH
+        captureAndProcess();
+    } else {
+        // Chụp lại
+        resetToCamera();
+    }
 }
 
-function resetScanState() {
-    document.getElementById('resultBox').value = '';
-    document.getElementById('livePreview').innerText = "👀 Đang quét tìm cỡ chuẩn...";
-    document.getElementById('status').innerText = "⚡ Camera đang tự động lọc cỡ chuẩn...";
+function resetToCamera() {
+    isFrozen = false;
+    document.getElementById('webcam').style.display = 'block';
+    document.getElementById('frozenImage').style.display = 'none';
+    document.getElementById('scanGuide').style.display = 'block';
+    
+    const btn = document.getElementById('captureBtn');
+    btn.innerText = "📸 CHỤP ĐỂ BÓC TÁCH CỠ";
+    btn.style.background = "#17a2b8";
+    
+    document.getElementById('resultBox').value = "";
+    document.getElementById('status').innerText = "👀 Căn tem vào khung và bấm CHỤP";
     document.getElementById('status').style.color = "green";
-    startAutoScan();
 }
 
 function preprocessCanvas(canvas) {
@@ -162,66 +183,47 @@ function preprocessCanvas(canvas) {
     const data = imgData.data;
     for (let i = 0; i < data.length; i += 4) {
         let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        let v = avg < 135 ? 0 : 255;
+        let v = avg < 130 ? 0 : 255;
         data[i] = v; data[i + 1] = v; data[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
 }
 
-function getLevenshteinDistance(a, b) {
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-
-    for (let i = 1; i <= b.length; i++) {
-        for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1,
-                    matrix[i][j - 1] + 1,
-                    matrix[i - 1][j] + 1
-                );
-            }
-        }
-    }
-    return matrix[b.length][a.length];
-}
-
 function autoMatchExactSize(scannedText) {
-    if (!currentValidSizes || currentValidSizes.length === 0) return null;
-    
+    if (!currentValidSizes || currentValidSizes.length === 0) return scannedText;
     let cleanScanned = scannedText.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (cleanScanned.length < 2) return null;
+    if (cleanScanned.length < 1) return scannedText;
 
-    let bestMatch = null;
-    let minDistance = 999;
+    let bestMatch = scannedText;
+    let maxMatchChars = 0;
 
     currentValidSizes.forEach(validSize => {
         let cleanValid = validSize.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        let dist = getLevenshteinDistance(cleanScanned, cleanValid);
-
-        if (dist < minDistance) {
-            minDistance = dist;
+        let matched = 0;
+        for (let char of cleanValid) {
+            if (cleanScanned.includes(char)) matched++;
+        }
+        if (matched > maxMatchChars) {
+            maxMatchChars = matched;
             bestMatch = validSize;
         }
     });
 
-    if (minDistance <= 3) {
-        return bestMatch;
-    }
-    return null;
+    return bestMatch;
 }
 
-async function captureAndAnalyze() {
-    if (!isScanning) return;
+async function captureAndProcess() {
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('hiddenCanvas');
     const context = canvas.getContext('2d');
+    const status = document.getElementById('status');
 
     if (video.videoWidth === 0) return;
 
+    status.innerText = "⚡ Đang bóc tách Cỡ x Giàng...";
+    status.style.color = "blue";
+
+    // 1. Chụp cắt đúng ô vuông giữa
     const cropX = video.videoWidth * 0.08;
     const cropY = video.videoHeight * 0.25;
     const cropWidth = video.videoWidth * 0.84;
@@ -231,26 +233,48 @@ async function captureAndAnalyze() {
     canvas.height = cropHeight;
 
     context.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+    
+    // Hiển thị ảnh đóng băng lên màn hình
+    const frozenImg = document.getElementById('frozenImage');
+    frozenImg.src = canvas.toDataURL('image/png');
+    video.style.display = 'none';
+    frozenImg.style.display = 'block';
+    document.getElementById('scanGuide').style.display = 'none';
+
+    isFrozen = true;
+    const btn = document.getElementById('captureBtn');
+    btn.innerText = "🔄 CHỤP LẠI (NẾU SAI)";
+    btn.style.background = "#ffc107";
+    btn.style.color = "#000";
+
+    // Preprocess để OCR đọc cực nét
     preprocessCanvas(canvas);
 
     try {
-        const result = await Tesseract.recognize(canvas, 'eng');
-        const rawText = result.data.text || '';
-        const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 1);
+        let text = "";
+        if (worker) {
+            const res = await worker.recognize(canvas);
+            text = res.data.text || '';
+        } else {
+            const res = await Tesseract.recognize(canvas, 'eng');
+            text = res.data.text || '';
+        }
+
+        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 1);
 
         if (lines.length > 0) {
             let matchedSize = autoMatchExactSize(lines[0]);
-            
-            if (matchedSize) {
-                document.getElementById('livePreview').innerText = "✅ KHỚP CHUẨN: " + matchedSize;
-                document.getElementById('resultBox').value = matchedSize;
-                document.getElementById('status').innerText = "🎯 TỰ ĐỘNG BẮT ĐÚNG CỠ! Bấm SAVE để lưu.";
-                document.getElementById('status').style.color = "green";
-            } else {
-                document.getElementById('livePreview').innerText = "👀 Đang dò: " + lines[0];
-            }
+            document.getElementById('resultBox').value = matchedSize;
+            status.innerText = "✅ BÓC TÁCH THÀNH CÔNG! Bấm SAVE để lưu.";
+            status.style.color = "green";
+        } else {
+            status.innerText = "⚠️ Không rõ chữ, vui lòng bấm CHỤP LẠI!";
+            status.style.color = "orange";
         }
-    } catch (e) {}
+    } catch (e) {
+        status.innerText = "❌ Lỗi xử lý ảnh!";
+        status.style.color = "red";
+    }
 }
 
 function renderSeasons() {
@@ -313,13 +337,12 @@ function updateDonHangDropdown() {
 function onDonHangChange() {
     const donHang = document.getElementById('donHangSelect').value;
     const item = rawStyleData.find(i => i.donHang === donHang);
-    
-    if (item && item.danhSachCo && item.danhSachCo.length > 0) {
+    if (item && item.danhSachCo) {
         currentValidSizes = item.danhSachCo;
     } else {
         currentValidSizes = [];
     }
-    resetScanState();
+    resetToCamera();
 }
 
 async function saveToGoogleSheets() {
@@ -328,9 +351,9 @@ async function saveToGoogleSheets() {
     const status = document.getElementById('status');
 
     if (!donHang) { alert("Vui lòng chọn Đơn hàng!"); return; }
-    if (!vanBan) { alert("Chưa bắt được cỡ x giàng chuẩn!"); return; }
+    if (!vanBan) { alert("Chưa có Cỡ x Giàng để lưu!"); return; }
 
-    status.innerText = "⏳ Đang lưu dữ liệu...";
+    status.innerText = "⏳ Đang lưu...";
     status.style.color = "blue";
 
     try {
@@ -340,15 +363,15 @@ async function saveToGoogleSheets() {
             body: JSON.stringify({ muaSX: selectedSeason, donHang: donHang, vanBan: vanBan })
         });
 
-        status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG VỀ SHEET!";
+        status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG!";
         status.style.color = "green";
 
         setTimeout(() => {
-            resetScanState();
-        }, 1000);
+            resetToCamera();
+        }, 800);
 
     } catch (e) {
-        status.innerText = "❌ Lỗi khi lưu dữ liệu!";
+        status.innerText = "❌ Lỗi lưu dữ liệu!";
         status.style.color = "red";
     }
 }
