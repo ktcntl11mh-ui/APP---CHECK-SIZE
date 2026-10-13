@@ -97,8 +97,7 @@
 
 <script>
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBDo0P_wZJTAmeYK3Ybvjk5rPlfBW4D8GsyYBjON3t9TyozgmNDLwczG1pa4qShRjH/exec';
-let globalStyleData = [];
-let globalSizeData = [];
+let rawStyleData = [];
 let selectedSeason = localStorage.getItem('saved_season') || '';
 let savedDonHang = localStorage.getItem('saved_donhang') || '';
 let isFrozen = false;
@@ -113,8 +112,8 @@ window.onload = async function() {
     try {
         const res = await fetch(GOOGLE_SCRIPT_URL);
         const json = await res.json();
-        globalStyleData = json.style || [];
-        globalSizeData = json.sizes || [];
+        // Nhận đúng mảng data trả về từ doGet của Apps Script mới
+        rawStyleData = json.data || [];
         
         renderSeasons();
         status.innerText = "👀 Căn tem vào khung rộng và bấm CHỤP!";
@@ -177,21 +176,14 @@ function preprocessCanvas(canvas) {
     ctx.putImageData(imgData, 0, 0);
 }
 
-// HÀM LẤY DANH SÁCH SIZE CHUẨN DỰA TRÊN ĐƠN HÀNG -> NHÃN HÀNG -> DS-SIZE
+// Lấy danh sách size chuẩn được đính kèm sẵn từ đơn hàng hiện tại
 function getValidSizesForCurrentOrder() {
     const currentDH = document.getElementById('donHangSelect').value;
-    // 1. Tìm nhãn hàng từ đơn hàng hiện tại trong STYLE
-    const styleItem = globalStyleData.find(item => item.muaSX === selectedSeason && item.donHang === currentDH);
-    if (!styleItem) return [];
-
-    const nhanHang = styleItem.nhanHang;
-
-    // 2. Lọc các size tương ứng với nhãn hàng đó trong DS-SIZE
-    const matchedSizes = globalSizeData.filter(item => item.nhanHang.toUpperCase() === nhanHang.toUpperCase());
-    return matchedSizes.map(item => item.size);
+    const item = rawStyleData.find(d => d.muaSX === selectedSeason && d.donHang === currentDH);
+    return item ? (item.danhSachCo || []) : [];
 }
 
-// Thuật toán so khớp thông minh tự động sửa lỗi OCR dựa vào danh sách chuẩn
+// Thuật toán so khớp đối chiếu chữ OCR với danh sách chuẩn
 function findBestMatch(ocrText, validList) {
     if (!validList || validList.length === 0) return ocrText;
     
@@ -276,12 +268,12 @@ async function captureAndProcess() {
             let topMostLine = linesData[0].text;
             let cleanFirstLine = topMostLine.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').trim();
 
-            // TỰ ĐỘNG ĐỐI CHIẾU VỚI DANH SÁCH SIZE CHUẨN CỦA NHÃN HÀNG
+            // Tự động so khớp với danh sách cỡ theo nhãn hàng
             let validList = getValidSizesForCurrentOrder();
             let finalResult = findBestMatch(cleanFirstLine, validList);
 
             document.getElementById('resultBox').value = finalResult;
-            status.innerText = "✅ ĐÃ ÁP DỤNG DANH SÁCH SIZE THEO NHÃN HÀNG! Bấm SAVE.";
+            status.innerText = "✅ ĐÃ ĐỐI CHIẾU SIZE CHUẨN! Bấm SAVE để lưu.";
             status.style.color = "green";
         } else {
             status.innerText = "⚠️ Không nhận diện thấy chữ, hãy bấm CHỤP LẠI!";
@@ -295,7 +287,7 @@ async function captureAndProcess() {
 }
 
 function renderSeasons() {
-    const seasons = [...new Set(globalStyleData.map(item => item.muaSX))];
+    const seasons = [...new Set(rawStyleData.map(item => item.muaSX))].filter(Boolean);
     const container = document.getElementById('seasonButtons');
     container.innerHTML = '';
     if (seasons.length === 0) return;
@@ -327,8 +319,8 @@ function selectSeason(season) {
 function updateDonHangDropdown() {
     const select = document.getElementById('donHangSelect');
     select.innerHTML = '';
-    const filtered = globalStyleData.filter(item => item.muaSX === selectedSeason);
-    const uniqueDonHang = [...new Set(filtered.map(item => item.donHang))];
+    const filtered = rawStyleData.filter(item => item.muaSX === selectedSeason);
+    const uniqueDonHang = [...new Set(filtered.map(item => item.donHang))].filter(Boolean);
 
     uniqueDonHang.forEach(dh => {
         const opt = document.createElement('option');
@@ -349,6 +341,7 @@ function updateDonHangDropdown() {
 }
 
 function onDonHangChange() {
+    localStorage.setItem('saved_donhang', document.getElementById('donHangSelect').value);
     resetToCamera();
 }
 
