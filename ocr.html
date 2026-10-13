@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>XTL - Quét OCR Cỡ Theo Nhãn Hàng</title>
+    <title>XTL - Quét OCR Tự Động 100%</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <style>
         * { box-sizing: border-box; }
@@ -29,8 +29,8 @@
         .btn-season.active { background: #007bff; color: white; }
         
         #camera-container {
-            position: relative; width: 100%; height: 200px; background: #000;
-            border-radius: 10px; overflow: hidden; margin-bottom: 10px;
+            position: relative; width: 100%; height: 210px; background: #000;
+            border-radius: 10px; overflow: hidden; margin-bottom: 12px;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         .scan-guide {
@@ -41,28 +41,20 @@
         .live-preview-text {
             position: absolute; bottom: 0; left: 0; width: 100%;
             text-align: center; color: #00ff00; font-weight: bold;
-            font-size: 20px; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.75);
-            padding: 8px 4px; min-height: 40px;
+            font-size: 22px; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.8);
+            padding: 10px 4px; min-height: 45px;
         }
-        .size-buttons-list {
-            display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; max-height: 150px; overflow-y: auto;
-        }
-        .btn-size-item {
-            padding: 8px 12px; background: #e9ecef; border: 1px solid #007bff;
-            border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer; color: #007bff;
-        }
-        .btn-size-item:active { background: #007bff; color: white; }
         .btn-action {
             width: 100%; padding: 15px; color: white; border: none;
             border-radius: 8px; font-weight: bold; font-size: 18px; cursor: pointer;
         }
-        .btn-lock { background: #17a2b8; margin-bottom: 12px; }
-        .btn-save { background: #28a745; }
+        .btn-save { background: #28a745; margin-top: 10px; }
         #resultBox {
-            width: 100%; height: 60px; padding: 10px; border: 2px solid #007bff;
-            border-radius: 8px; font-size: 22px; font-weight: bold; color: #d9534f;
+            width: 100%; height: 60px; padding: 10px; border: 2px solid #28a745;
+            border-radius: 8px; font-size: 24px; font-weight: bold; color: #155724; background: #e8f8f5;
+            text-align: center;
         }
-        #status { margin-top: 10px; text-align: center; font-weight: bold; font-size: 16px; line-height: 1.4; }
+        #status { margin-top: 12px; text-align: center; font-weight: bold; font-size: 16px; line-height: 1.4; }
     </style>
 </head>
 <body>
@@ -86,19 +78,12 @@
     <div id="camera-container">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="scan-guide"></div>
-        <div class="live-preview-text" id="livePreview">👀 Lia camera vào tem...</div>
+        <div class="live-preview-text" id="livePreview">👀 Đang quét tìm cỡ chuẩn...</div>
     </div>
 
-    <button class="btn-action btn-lock" id="lockBtn" onclick="lockCurrentText()">🎯 CHỐT CỠ NÀY</button>
-
     <div class="form-group">
-        <label>Cỡ x giàng chuẩn bị Lưu *</label>
-        <textarea id="resultBox" placeholder="Chữ chốt sẽ hiển thị ở đây..." onfocus="pauseScanForEdit()"></textarea>
-        
-        <label style="font-size: 14px; color: #555; margin-top: 8px;" id="sizeListLabel">Dải cỡ thuộc nhãn hàng (Chạm chọn nhanh):</label>
-        <div class="size-buttons-list" id="sizeButtonsList">
-            <small style="color:#888;">Chưa chọn đơn hàng</small>
-        </div>
+        <label>Cỡ x giàng tự động khớp chuẩn *</label>
+        <input type="text" id="resultBox" readonly placeholder="Hệ thống tự động trả về cỡ chuẩn...">
     </div>
 
     <button class="btn-action btn-save" onclick="saveToGoogleSheets()">💾 SAVE CSDL</button>
@@ -117,7 +102,6 @@ let savedDonHang = localStorage.getItem('saved_donhang') || '';
 let currentValidSizes = [];
 let isScanning = true;
 let scanInterval = null;
-let currentDetectedText = "";
 
 window.onload = async function() {
     initCamera();
@@ -132,7 +116,7 @@ window.onload = async function() {
         const json = await res.json();
         rawStyleData = json.data || [];
         renderSeasons();
-        status.innerText = "👀 Camera đang dò cỡ chuẩn...";
+        status.innerText = "⚡ Camera đang tự động lọc cỡ chuẩn...";
         status.style.color = "green";
     } catch (e) {
         status.innerText = "❌ Lỗi tải CSDL!";
@@ -161,32 +145,13 @@ async function initCamera() {
 function startAutoScan() {
     isScanning = true;
     if (scanInterval) clearInterval(scanInterval);
-    scanInterval = setInterval(captureAndAnalyze, 700);
-}
-
-function pauseScanForEdit() {
-    isScanning = false;
-    if (scanInterval) clearInterval(scanInterval);
-    document.getElementById('status').innerText = "✏️ Đang ở chế độ chọn/sửa...";
-    document.getElementById('status').style.color = "orange";
-}
-
-function lockCurrentText() {
-    if (currentDetectedText) {
-        document.getElementById('resultBox').value = currentDetectedText;
-        document.getElementById('status').innerText = "🎯 Đã chốt cỡ! Bấm SAVE để lưu.";
-        document.getElementById('status').style.color = "green";
-    } else {
-        alert("Chưa dò được cỡ, vui lòng bấm chọn trực tiếp nút bên dưới!");
-    }
+    scanInterval = setInterval(captureAndAnalyze, 600); // Quét siêu nhanh 0.6s
 }
 
 function resetScanState() {
-    document.getElementById('resultBox').blur();
     document.getElementById('resultBox').value = '';
-    currentDetectedText = "";
-    document.getElementById('livePreview').innerText = "👀 Lia camera vào tem...";
-    document.getElementById('status').innerText = "👀 Camera đang dò cỡ chuẩn...";
+    document.getElementById('livePreview').innerText = "👀 Đang quét tìm cỡ chuẩn...";
+    document.getElementById('status').innerText = "⚡ Camera đang tự động lọc cỡ chuẩn...";
     document.getElementById('status').style.color = "green";
     startAutoScan();
 }
@@ -203,28 +168,53 @@ function preprocessCanvas(canvas) {
     ctx.putImageData(imgData, 0, 0);
 }
 
-// So sánh chuỗi quét được với danh sách cỡ chuẩn của Nhãn Hàng
-function matchBestSize(scannedText) {
-    if (!currentValidSizes || currentValidSizes.length === 0) return scannedText;
+// Hàm tính khoảng cách chuỗi (Levenshtein Distance) để lọc chính xác 100%
+function getLevenshteinDistance(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+// Ép dòng quét được khớp tự động chính xác với danh sách DS-SIZE
+function autoMatchExactSize(scannedText) {
+    if (!currentValidSizes || currentValidSizes.length === 0) return null;
     
     let cleanScanned = scannedText.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    let bestMatch = scannedText;
-    let maxScore = -1;
+    if (cleanScanned.length < 2) return null;
+
+    let bestMatch = null;
+    let minDistance = 999;
 
     currentValidSizes.forEach(validSize => {
         let cleanValid = validSize.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        let score = 0;
-        for (let char of cleanValid) {
-            if (cleanScanned.includes(char)) score++;
-        }
+        let dist = getLevenshteinDistance(cleanScanned, cleanValid);
 
-        if (score > maxScore) {
-            maxScore = score;
+        if (dist < minDistance) {
+            minDistance = dist;
             bestMatch = validSize;
         }
     });
 
-    return bestMatch;
+    // Chỉ chấp nhận nếu độ sai lệch nhỏ (Khớp chính xác cao)
+    if (minDistance <= 3) {
+        return bestMatch;
+    }
+    return null;
 }
 
 async function captureAndAnalyze() {
@@ -252,9 +242,16 @@ async function captureAndAnalyze() {
         const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 1);
 
         if (lines.length > 0) {
-            let matchedSize = matchBestSize(lines[0]);
-            currentDetectedText = matchedSize;
-            document.getElementById('livePreview').innerText = matchedSize;
+            let matchedSize = autoMatchExactSize(lines[0]);
+            
+            if (matchedSize) {
+                document.getElementById('livePreview').innerText = "✅ KHỚP CHUẨN: " + matchedSize;
+                document.getElementById('resultBox').value = matchedSize;
+                document.getElementById('status').innerText = "🎯 TỰ ĐỘNG BẮT ĐÚNG CỠ! Bấm SAVE để lưu.";
+                document.getElementById('status').style.color = "green";
+            } else {
+                document.getElementById('livePreview').innerText = "👀 Đang dò: " + lines[0];
+            }
         }
     } catch (e) {}
 }
@@ -320,31 +317,12 @@ function onDonHangChange() {
     const donHang = document.getElementById('donHangSelect').value;
     const item = rawStyleData.find(i => i.donHang === donHang);
     
-    const listContainer = document.getElementById('sizeButtonsList');
-    const label = document.getElementById('sizeListLabel');
-    listContainer.innerHTML = '';
-
     if (item && item.danhSachCo && item.danhSachCo.length > 0) {
         currentValidSizes = item.danhSachCo;
-        label.innerText = `Dải cỡ nhãn [${item.nhanHang}] (Bấm chọn nhanh):`;
-
-        currentValidSizes.forEach(sizeStr => {
-            const btn = document.createElement('button');
-            btn.className = 'btn-size-item';
-            btn.innerText = sizeStr;
-            btn.onclick = () => {
-                pauseScanForEdit();
-                document.getElementById('resultBox').value = sizeStr;
-                document.getElementById('status').innerText = "✅ Đã chọn: " + sizeStr;
-                document.getElementById('status').style.color = "green";
-            };
-            listContainer.appendChild(btn);
-        });
     } else {
         currentValidSizes = [];
-        label.innerText = 'Dải cỡ thuộc nhãn hàng:';
-        listContainer.innerHTML = '<small style="color:#888;">Chưa cấu hình dải cỡ cho nhãn hàng này trong DS-SIZE</small>';
     }
+    resetScanState();
 }
 
 async function saveToGoogleSheets() {
@@ -353,7 +331,7 @@ async function saveToGoogleSheets() {
     const status = document.getElementById('status');
 
     if (!donHang) { alert("Vui lòng chọn Đơn hàng!"); return; }
-    if (!vanBan) { alert("Chưa chọn hoặc quét cỡ x giàng!"); return; }
+    if (!vanBan) { alert("Chưa bắt được cỡ x giàng chuẩn!"); return; }
 
     status.innerText = "⏳ Đang lưu dữ liệu...";
     status.style.color = "blue";
