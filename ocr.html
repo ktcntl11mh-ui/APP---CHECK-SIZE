@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
@@ -34,7 +34,7 @@
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         .scan-guide {
-            position: absolute; top: 25%; left: 8%; width: 84%; height: 50%;
+            position: absolute; top: 20%; left: 6%; width: 88%; height: 60%;
             border: 3px dashed #00ff00; pointer-events: none;
             box-shadow: 0 0 0 1000px rgba(0,0,0,0.35);
         }
@@ -74,8 +74,8 @@
     </div>
 
     <div class="form-group">
-        <label>Cỡ x giàng nhận diện được *</label>
-        <textarea id="resultBox" placeholder="Đang tự động dò cỡ x giàng..."></textarea>
+        <label>Cỡ x giàng nhận diện được * (Có thể sửa tay)</label>
+        <textarea id="resultBox" placeholder="Đang tự động quét camera..." onfocus="pauseScanForEdit()"></textarea>
     </div>
 
     <button class="btn-action btn-save" onclick="saveToGoogleSheets()">💾 SAVE CSDL</button>
@@ -93,6 +93,7 @@ let selectedSeason = localStorage.getItem('saved_season') || '';
 let savedDonHang = localStorage.getItem('saved_donhang') || '';
 let isScanning = true;
 let scanInterval = null;
+let isUserEditing = false;
 
 window.onload = async function() {
     initCamera();
@@ -135,11 +136,22 @@ async function initCamera() {
 
 function startAutoScan() {
     isScanning = true;
+    isUserEditing = false;
     if (scanInterval) clearInterval(scanInterval);
-    scanInterval = setInterval(captureAndAnalyze, 1200);
+    scanInterval = setInterval(captureAndAnalyze, 1000);
+}
+
+// Tạm dừng quét khi người dùng trỏ chuột/chạm vào sửa tay
+function pauseScanForEdit() {
+    isUserEditing = true;
+    isScanning = false;
+    if (scanInterval) clearInterval(scanInterval);
+    document.getElementById('status').innerText = "✏️ Đang ở chế độ sửa tay...";
+    document.getElementById('status').style.color = "orange";
 }
 
 function resetScanState() {
+    document.getElementById('resultBox').blur(); // Bỏ con trỏ gõ phím
     document.getElementById('resultBox').value = '';
     document.getElementById('status').innerText = "👀 Đang tự động quét live camera...";
     document.getElementById('status').style.color = "green";
@@ -152,24 +164,25 @@ function preprocessCanvas(canvas) {
     const data = imgData.data;
     for (let i = 0; i < data.length; i += 4) {
         let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        let v = avg < 140 ? 0 : 255;
+        let v = avg < 135 ? 0 : 255;
         data[i] = v; data[i + 1] = v; data[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
 }
 
 async function captureAndAnalyze() {
-    if (!isScanning) return;
+    if (!isScanning || isUserEditing) return;
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('hiddenCanvas');
     const context = canvas.getContext('2d');
 
     if (video.videoWidth === 0) return;
 
-    const cropX = video.videoWidth * 0.08;
-    const cropY = video.videoHeight * 0.25;
-    const cropWidth = video.videoWidth * 0.84;
-    const cropHeight = video.videoHeight * 0.50;
+    // Lấy đúng khung trung tâm
+    const cropX = video.videoWidth * 0.06;
+    const cropY = video.videoHeight * 0.20;
+    const cropWidth = video.videoWidth * 0.88;
+    const cropHeight = video.videoHeight * 0.60;
 
     canvas.width = cropWidth;
     canvas.height = cropHeight;
@@ -180,15 +193,18 @@ async function captureAndAnalyze() {
     try {
         const result = await Tesseract.recognize(canvas, 'eng');
         const rawText = result.data.text || '';
-        const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 3);
+        
+        // TÁCH CHUẨN NGUYÊN BẢN CHỈ LẤY DÒNG ĐẦU TIÊN
+        const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 2);
 
-        const sizeLine = lines.find(l => /\d/.test(l) || /(SHORT|REG|COURT|LONG|TALL|cm)/i.test(l));
+        if (lines.length > 0 && isScanning && !isUserEditing) {
+            // Lọc sạch ký tự rác xuống dòng, chỉ giữ duy nhất 1 dòng đầu tiên
+            let cleanFirstLine = lines[0].replace(/[\r\n]+/g, " ").trim();
 
-        if (sizeLine && isScanning) {
             isScanning = false;
             clearInterval(scanInterval);
-            document.getElementById('resultBox').value = sizeLine;
-            document.getElementById('status').innerText = "✅ Đã tìm thấy cỡ x giàng! Bấm SAVE để lưu.";
+            document.getElementById('resultBox').value = cleanFirstLine;
+            document.getElementById('status').innerText = "✅ Đã bắt được dòng đầu tiên! Hãy kiểm tra & bấm SAVE.";
             document.getElementById('status').style.color = "green";
         }
     } catch (e) {}
@@ -250,29 +266,31 @@ function updateDonHangDropdown() {
 
 async function saveToGoogleSheets() {
     const donHang = document.getElementById('donHangSelect').value;
-    const vanBan = document.getElementById('resultBox').value;
+    // Lấy nội dung và làm sạch ký tự xuống dòng / khoảng trắng dư thừa
+    let vanBan = document.getElementById('resultBox').value.replace(/[\r\n]+/g, " ").trim();
     const status = document.getElementById('status');
 
     if (!donHang) { alert("Vui lòng chọn Đơn hàng!"); return; }
     if (!vanBan) { alert("Chưa có nội dung cỡ x giàng!"); return; }
 
-    status.innerText = "⏳ Đang lưu vào CSDL...";
+    status.innerText = "⏳ Đang lưu dữ liệu...";
     status.style.color = "blue";
 
     try {
         await fetch(GOOGLE_SCRIPT_URL, {
-            method: "POST", mode: "no-cors",
+            method: "POST", 
+            mode: "no-cors",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ muaSX: selectedSeason, donHang: donHang, vanBan: vanBan })
         });
 
-        status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG!";
+        status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG VỀ SHEET!";
         status.style.color = "green";
-        
-        // Tự động khôi phục về trạng thái quét tem mới sau 1.2 giây
+
+        // Tự động giải phóng và bật lại camera sau 1 giây
         setTimeout(() => {
             resetScanState();
-        }, 1200);
+        }, 1000);
 
     } catch (e) {
         status.innerText = "❌ Lỗi khi lưu dữ liệu!";
