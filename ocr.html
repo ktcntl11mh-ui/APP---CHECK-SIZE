@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>XTL - Bóc Tách Nguyên Văn Dòng Đầu</title>
+    <title>XTL - Lọc Tọa Độ Dòng Đầu</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <style>
         * { box-sizing: border-box; }
@@ -28,8 +28,9 @@
         }
         .btn-season.active { background: #007bff; color: white; }
         
+        /* Khung chụp to rộng thoải mái */
         #camera-container {
-            position: relative; width: 100%; height: 210px; background: #000;
+            position: relative; width: 100%; height: 240px; background: #000;
             border-radius: 10px; overflow: hidden; margin-bottom: 12px;
         }
         video, img#frozenImage {
@@ -38,9 +39,9 @@
         img#frozenImage { display: none; }
         
         .scan-guide {
-            position: absolute; top: 38%; left: 8%; width: 84%; height: 22%;
-            border: 2px solid #00ff00; pointer-events: none;
-            box-shadow: 0 0 0 1000px rgba(0,0,0,0.55);
+            position: absolute; top: 15%; left: 5%; width: 90%; height: 70%;
+            border: 2px dashed #00ff00; pointer-events: none;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.35);
         }
         
         .btn-action {
@@ -75,18 +76,18 @@
         </select>
     </div>
 
-    <label>Đưa ĐÚNG 1 DÒNG CỠ VÀO KHUNG XANH:</label>
+    <label>Căn tem vào khung rộng rồi bấm Chụp:</label>
     <div id="camera-container">
         <video id="webcam" autoplay playsinline muted></video>
         <img id="frozenImage" alt="Ảnh đã chụp">
         <div class="scan-guide" id="scanGuide"></div>
     </div>
 
-    <button class="btn-action btn-capture" id="captureBtn" onclick="handleCaptureOrRetake()">📸 CHỤP ĐỂ LẤY CỠ</button>
+    <button class="btn-action btn-capture" id="captureBtn" onclick="handleCaptureOrRetake()">📸 CHỤP BÓC TÁCH DÒNG ĐẦU</button>
 
     <div class="form-group">
-        <label>Cỡ x giàng đọc chính xác từ tem * (Sửa được)</label>
-        <input type="text" id="resultBox" placeholder="Chữ trên tem sẽ hiện ở đây...">
+        <label>Chữ dòng đầu tiên bóc tách * (Sửa được)</label>
+        <input type="text" id="resultBox" placeholder="Dòng chữ đầu tiên sẽ hiện ở đây...">
     </div>
 
     <button class="btn-action btn-save" onclick="saveToGoogleSheets()">💾 SAVE CSDL</button>
@@ -97,7 +98,6 @@
 <canvas id="hiddenCanvas" style="display:none;"></canvas>
 
 <script>
-// LINK APPS SCRIPT MỚI ĐÃ ĐƯỢC CẬP NHẬT TẠI ĐÂY
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBDo0P_wZJTAmeYK3Ybvjk5rPlfBW4D8GsyYBjON3t9TyozgmNDLwczG1pa4qShRjH/exec';
 
 let rawStyleData = [];
@@ -117,7 +117,7 @@ window.onload = async function() {
         const json = await res.json();
         rawStyleData = json.data || [];
         renderSeasons();
-        status.innerText = "👀 Căn đúng 1 dòng cỡ vào khung xanh!";
+        status.innerText = "👀 Căn tem vào khung rộng và bấm CHỤP!";
         status.style.color = "green";
     } catch (e) {
         status.innerText = "❌ Lỗi kết nối CSDL!";
@@ -155,12 +155,12 @@ function resetToCamera() {
     document.getElementById('scanGuide').style.display = 'block';
     
     const btn = document.getElementById('captureBtn');
-    btn.innerText = "📸 CHỤP ĐỂ LẤY CỠ";
+    btn.innerText = "📸 CHỤP BÓC TÁCH DÒNG ĐẦU";
     btn.style.background = "#17a2b8";
     btn.style.color = "#fff";
     
     document.getElementById('resultBox').value = "";
-    document.getElementById('status').innerText = "👀 Căn đúng 1 dòng cỡ và bấm CHỤP";
+    document.getElementById('status').innerText = "👀 Căn tem vào khung và bấm CHỤP";
     document.getElementById('status').style.color = "green";
 }
 
@@ -170,7 +170,7 @@ function preprocessCanvas(canvas) {
     const data = imgData.data;
     for (let i = 0; i < data.length; i += 4) {
         let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        let v = avg < 140 ? 0 : 255;
+        let v = avg < 135 ? 0 : 255;
         data[i] = v; data[i + 1] = v; data[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
@@ -184,13 +184,14 @@ async function captureAndProcess() {
 
     if (video.videoWidth === 0) return;
 
-    status.innerText = "⚡ Đang đọc chữ từ tem...";
+    status.innerText = "⚡ Đang tìm dòng chữ cao nhất...";
     status.style.color = "blue";
 
-    const cropX = video.videoWidth * 0.08;
-    const cropY = video.videoHeight * 0.38;
-    const cropWidth = video.videoWidth * 0.84;
-    const cropHeight = video.videoHeight * 0.22;
+    // CẮT DIỆN TÍCH RỘNG THOẢI MÁI (70% CHIỀU CAO KHUNG)
+    const cropX = video.videoWidth * 0.05;
+    const cropY = video.videoHeight * 0.15;
+    const cropWidth = video.videoWidth * 0.90;
+    const cropHeight = video.videoHeight * 0.70;
 
     canvas.width = cropWidth;
     canvas.height = cropHeight;
@@ -212,19 +213,36 @@ async function captureAndProcess() {
 
         preprocessCanvas(canvas);
 
+        // Đọc Tesseract chi tiết lấy tọa độ vị trí (bbox)
         const result = await Tesseract.recognize(canvas, 'eng');
-        const rawText = result.data.text || '';
         
-        const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 1);
+        let linesData = [];
+        if (result.data && result.data.lines) {
+            result.data.lines.forEach(line => {
+                let text = line.text.trim();
+                // Lọc bỏ dòng trống hoặc dòng có ít hơn 2 ký tự
+                if (text.length >= 2 && line.bbox) {
+                    linesData.push({
+                        text: text,
+                        topY: line.bbox.y0 // Tọa độ Y tính từ trên xuống
+                    });
+                }
+            });
+        }
 
-        if (lines.length > 0) {
-            let cleanFirstLine = lines[0].replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').trim();
+        if (linesData.length > 0) {
+            // SẮP XẾP TẤT CẢ CÁC DÒNG THEO TỌA ĐỘ Y TỪ TRÊN XUỐNG DƯỚI
+            linesData.sort((a, b) => a.topY - b.topY);
             
+            // LẤY CHÍNH XÁC DÒNG Ở VỊ TRÍ CAO NHẤT TRÊN CÙNG
+            let topMostLine = linesData[0].text;
+            let cleanFirstLine = topMostLine.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').trim();
+
             document.getElementById('resultBox').value = cleanFirstLine;
-            status.innerText = "✅ ĐÃ LẤY ĐÚNG CHỮ TRÊN TEM! Bấm SAVE để lưu.";
+            status.innerText = "✅ ĐÃ LẤY ĐÚNG DÒNG CỠ CAO NHẤT! Bấm SAVE để lưu.";
             status.style.color = "green";
         } else {
-            status.innerText = "⚠️ Không thấy chữ trong khung, hãy bấm CHỤP LẠI!";
+            status.innerText = "⚠️ Không nhận diện thấy chữ, hãy bấm CHỤP LẠI!";
             status.style.color = "orange";
         }
 
