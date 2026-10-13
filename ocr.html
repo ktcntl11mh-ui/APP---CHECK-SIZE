@@ -37,10 +37,11 @@
         }
         img#frozenImage { display: none; }
         
+        /* Cắt hẹp khung xanh chỉ vừa vặn 1 dòng chữ */
         .scan-guide {
-            position: absolute; top: 20%; left: 8%; width: 84%; height: 60%;
+            position: absolute; top: 35%; left: 10%; width: 80%; height: 28%;
             border: 2px dashed #00ff00; pointer-events: none;
-            box-shadow: 0 0 0 1000px rgba(0,0,0,0.4);
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.5);
         }
         
         .btn-action {
@@ -75,7 +76,7 @@
         </select>
     </div>
 
-    <label>Căn dòng Cỡ x Giàng vào khung xanh:</label>
+    <label>Căn CHÍNH XÁC dòng Cỡ vào KHUNG XANH:</label>
     <div id="camera-container">
         <video id="webcam" autoplay playsinline muted></video>
         <img id="frozenImage" alt="Ảnh đã chụp">
@@ -164,22 +165,43 @@ function resetToCamera() {
     document.getElementById('status').style.color = "green";
 }
 
+// Thuật toán khoảng cách Levenshtein so sánh chính xác từng vị trí ký tự
+function getLevenshteinDistance(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
 function autoMatchExactSize(scannedText) {
     if (!currentValidSizes || currentValidSizes.length === 0) return scannedText;
+    
     let cleanScanned = scannedText.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (cleanScanned.length < 1) return scannedText;
+    if (cleanScanned.length < 2) return scannedText;
 
     let bestMatch = scannedText;
-    let maxMatchChars = 0;
+    let minDistance = 999;
 
     currentValidSizes.forEach(validSize => {
         let cleanValid = validSize.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        let matched = 0;
-        for (let char of cleanValid) {
-            if (cleanScanned.includes(char)) matched++;
-        }
-        if (matched > maxMatchChars) {
-            maxMatchChars = matched;
+        let dist = getLevenshteinDistance(cleanScanned, cleanValid);
+
+        if (dist < minDistance) {
+            minDistance = dist;
             bestMatch = validSize;
         }
     });
@@ -193,20 +215,16 @@ async function captureAndProcess() {
     const context = canvas.getContext('2d');
     const status = document.getElementById('status');
 
-    if (video.videoWidth === 0) {
-        status.innerText = "⚠️ Camera chưa sẵn sàng!";
-        status.style.color = "orange";
-        return;
-    }
+    if (video.videoWidth === 0) return;
 
     status.innerText = "⚡ Đang xử lý bóc tách cỡ...";
     status.style.color = "blue";
 
-    // Lấy kích thước khung cắt
-    const cropX = video.videoWidth * 0.08;
-    const cropY = video.videoHeight * 0.20;
-    const cropWidth = video.videoWidth * 0.84;
-    const cropHeight = video.videoHeight * 0.60;
+    // CHỈ CẮT ĐÚNG HẸP KHUNG TẠI DÒNG ĐẦU (Tương ứng với scan-guide 28% height)
+    const cropX = video.videoWidth * 0.10;
+    const cropY = video.videoHeight * 0.35;
+    const cropWidth = video.videoWidth * 0.80;
+    const cropHeight = video.videoHeight * 0.28;
 
     canvas.width = cropWidth;
     canvas.height = cropHeight;
@@ -214,7 +232,6 @@ async function captureAndProcess() {
     try {
         context.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
         
-        // Hiển thị ảnh tĩnh lên giao diện
         const frozenImg = document.getElementById('frozenImage');
         frozenImg.src = canvas.toDataURL('image/png');
         video.style.display = 'none';
@@ -227,26 +244,21 @@ async function captureAndProcess() {
         btn.style.background = "#ffc107";
         btn.style.color = "#000";
 
-        // Nhận diện chữ trực tiếp bằng Tesseract Engine đơn giản
         const result = await Tesseract.recognize(canvas, 'eng');
         const rawText = result.data.text || '';
-        
-        // Tách các dòng chữ
-        const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 2);
+        const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 1);
 
         if (lines.length > 0) {
-            // Lấy dòng đầu tiên và khớp với danh sách Cỡ x Giàng chuẩn từ CSDL
             let matchedSize = autoMatchExactSize(lines[0]);
             document.getElementById('resultBox').value = matchedSize;
             status.innerText = "✅ BÓC TÁCH THÀNH CÔNG! Bấm SAVE để lưu.";
             status.style.color = "green";
         } else {
-            status.innerText = "⚠️ Không nhận diện rõ chữ, hãy bấm CHỤP LẠI!";
+            status.innerText = "⚠️ Không nhận diện rõ, hãy căn dòng cỡ đúng khung xanh và chụp lại!";
             status.style.color = "orange";
         }
 
     } catch (e) {
-        console.error(e);
         status.innerText = "❌ Lỗi đọc ảnh! Vui lòng bấm CHỤP LẠI.";
         status.style.color = "red";
     }
