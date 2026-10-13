@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>XTL - Quét Siêu Tốc < 1s</title>
+    <title>XTL - Quét Siêu Tốc (Bản Vá Lỗi)</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <style>
         * { box-sizing: border-box; }
@@ -28,23 +28,32 @@
         }
         .btn-season.active { background: #007bff; color: white; }
         
-        /* Khung camera tối ưu diện tích hẹp */
         #camera-container {
-            position: relative; width: 100%; height: 160px; background: #000;
-            border-radius: 10px; overflow: hidden; margin-bottom: 12px;
+            position: relative; width: 100%; height: 200px; background: #000;
+            border-radius: 10px; overflow: hidden; margin-bottom: 8px;
         }
         video { width: 100%; height: 100%; object-fit: cover; }
         .scan-guide {
-            position: absolute; top: 35%; left: 10%; width: 80%; height: 30%;
-            border: 2px solid #00ff00; pointer-events: none;
-            box-shadow: 0 0 0 1000px rgba(0,0,0,0.45);
+            position: absolute; top: 35%; left: 5%; width: 90%; height: 30%;
+            border: 3px solid #00ff00; pointer-events: none;
+            box-shadow: 0 0 0 1000px rgba(0,0,0,0.55);
+            border-radius: 6px;
         }
         .live-preview-text {
             position: absolute; bottom: 0; left: 0; width: 100%;
             text-align: center; color: #00ff00; font-weight: bold;
-            font-size: 20px; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.85);
-            padding: 6px 4px; min-height: 38px;
+            font-size: 18px; text-shadow: 1px 1px 3px #000; background: rgba(0,0,0,0.85);
+            padding: 6px 4px; min-height: 36px;
         }
+        
+        /* Soi canvas trực tiếp thay vì render ra Base64 Img để chống tràn RAM */
+        .debug-box {
+            text-align: center; margin-bottom: 12px; background: #eee; padding: 6px; border-radius: 6px;
+        }
+        #hiddenCanvas { 
+            width: 100%; max-height: 60px; object-fit: contain; border: 1px solid #ccc; background: #fff; display: block; margin: auto;
+        }
+
         .btn-action {
             width: 100%; padding: 15px; color: white; border: none;
             border-radius: 8px; font-weight: bold; font-size: 18px; cursor: pointer;
@@ -59,7 +68,6 @@
     </style>
 </head>
 <body>
-
 <div class="card">
     <div class="form-group">
         <label>Mùa SX</label>
@@ -75,11 +83,16 @@
         </select>
     </div>
 
-    <label>Căn dải Cỡ x Giàng vào ĐÚNG KHUNG XANH:</label>
+    <label>Căn CHỮ CỠ GIÀNG lọt vào KHUNG XANH:</label>
     <div id="camera-container">
         <video id="webcam" autoplay playsinline muted></video>
         <div class="scan-guide"></div>
-        <div class="live-preview-text" id="livePreview">⚡ Đang chờ quét...</div>
+        <div class="live-preview-text" id="livePreview">⏳ Đang khởi tạo...</div>
+    </div>
+
+    <div class="debug-box">
+        <small style="font-size:12px; color:#555;">Mắt thần AI đang rọi (Phóng to):</small><br>
+        <canvas id="hiddenCanvas"></canvas>
     </div>
 
     <div class="form-group">
@@ -92,27 +105,25 @@
     <div id="status"></div>
 </div>
 
-<canvas id="hiddenCanvas" style="display:none;"></canvas>
-
 <script>
 const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBDo0P_wZJTAmeYK3Ybvjk5rPlfBW4D8GsyYBjON3t9TyozgmNDLwczG1pa4qShRjH/exec';
-
 let rawStyleData = [];
 let selectedSeason = localStorage.getItem('saved_season') || '';
 let savedDonHang = localStorage.getItem('saved_donhang') || '';
 let currentValidSizes = [];
-let isScanning = true;
-let isProcessing = false; // Chống chồng hàng chờ OCR
+let isScanning = false;
+let isProcessing = false;
 let scanInterval = null;
 let worker = null;
 
 window.onload = async function() {
-    initCamera();
-    initTesseractWorker();
-    
     const status = document.getElementById('status');
-    status.innerText = "⏳ Đang tải dữ liệu...";
+    status.innerText = "⏳ Đang tải CSDL & Camera...";
     status.style.color = "blue";
+
+    // Khởi tạo tuần tự đúng chuẩn Async/Await
+    await initCamera();
+    await initTesseractWorkerFast();
 
     try {
         const res = await fetch(GOOGLE_SCRIPT_URL);
@@ -121,72 +132,76 @@ window.onload = async function() {
         renderSeasons();
         status.innerText = "⚡ Sẵn sàng quét siêu tốc!";
         status.style.color = "green";
+        document.getElementById('livePreview').innerText = "⚡ Đưa chữ vào khung xanh";
+        
+        // Bắt đầu quét sau khi mọi thứ đã sẵn sàng 100%
+        startAutoScan();
     } catch (e) {
         status.innerText = "❌ Lỗi kết nối CSDL!";
         status.style.color = "red";
     }
 };
 
-// Khởi tạo trước Tesseract Worker để không mất công load lại
-async function initTesseractWorker() {
+async function initTesseractWorkerFast() {
     try {
-        worker = await Tesseract.createWorker('eng');
+        worker = await Tesseract.createWorker('eng', 1);
         await worker.setParameters({
-            tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/ ',
+            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, // PSM 6 giúp quét linh hoạt hơn kể cả khi nghiêng nhẹ
+            tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/- ',
         });
-    } catch(e) {}
+    } catch(e) {
+        console.error("Lỗi Worker:", e);
+    }
 }
 
 async function initCamera() {
     const video = document.getElementById('webcam');
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: "environment" }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false
+            video: { 
+                facingMode: { ideal: "environment" }, 
+                width: { ideal: 1920 }, 
+                height: { ideal: 1080 } 
+            }, 
+            audio: false
         });
         video.srcObject = stream;
+
+        const track = stream.getVideoTracks()[0];
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+        if (capabilities.zoom) {
+            track.applyConstraints({ advanced: [{ zoom: Math.min(2.0, capabilities.zoom.max) }] });
+        }
     } catch (err) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
             video.srcObject = stream;
         } catch (e) {}
     }
-    startAutoScan();
 }
 
 function startAutoScan() {
     isScanning = true;
     if (scanInterval) clearInterval(scanInterval);
-    scanInterval = setInterval(captureAndAnalyze, 250); // Quét liên tục mỗi 0.25s
+    scanInterval = setInterval(captureAndAnalyze, 250);
 }
 
 function resetScanState() {
     document.getElementById('resultBox').value = '';
     document.getElementById('livePreview').innerText = "⚡ Đang chờ quét...";
-    document.getElementById('status').innerText = "⚡ Rọi khung xanh vào chữ trên tem";
+    document.getElementById('status').innerText = "⚡ Rọi khung xanh vào chữ";
     document.getElementById('status').style.color = "green";
     isScanning = true;
-}
-
-// Xử lý ảnh siêu tốc: Chỉ giữ lại khung cực hẹp
-function preprocessCanvas(canvas) {
-    const ctx = canvas.getContext('2d');
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
-    for (let i = 0; i < data.length; i += 4) {
-        let avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        let v = avg < 120 ? 0 : 255;
-        data[i] = v; data[i + 1] = v; data[i + 2] = v;
-    }
-    ctx.putImageData(imgData, 0, 0);
 }
 
 function autoMatchExactSize(scannedText) {
     if (!currentValidSizes || currentValidSizes.length === 0) return null;
     let cleanScanned = scannedText.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (cleanScanned.length < 2) return null;
+    if (cleanScanned.length < 1) return null;
 
     let bestMatch = null;
-    let maxMatchChars = 0;
+    let maxScore = 0;
 
     currentValidSizes.forEach(validSize => {
         let cleanValid = validSize.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -194,8 +209,9 @@ function autoMatchExactSize(scannedText) {
         for (let char of cleanValid) {
             if (cleanScanned.includes(char)) matched++;
         }
-        if (matched > maxMatchChars && (matched / cleanValid.length) >= 0.6) {
-            maxMatchChars = matched;
+        let score = matched / cleanValid.length;
+        if (score > maxScore && score >= 0.45) {
+            maxScore = score;
             bestMatch = validSize;
         }
     });
@@ -204,50 +220,42 @@ function autoMatchExactSize(scannedText) {
 }
 
 async function captureAndAnalyze() {
-    if (!isScanning || isProcessing) return;
+    if (!isScanning || isProcessing || !worker) return;
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('hiddenCanvas');
     const context = canvas.getContext('2d');
 
-    if (video.videoWidth === 0) return;
+    // Vá lỗi chiều cao/chiều rộng video chưa sẵn sàng
+    if (!video.videoWidth || !video.videoHeight || video.videoWidth < 100) return;
 
-    // CẮT SIÊU HẸP ĐÚNG KHUNG XANH (Rút gọn 70% ảnh)
-    const cropX = video.videoWidth * 0.10;
-    const cropY = video.videoHeight * 0.35;
-    const cropWidth = video.videoWidth * 0.80;
-    const cropHeight = video.videoHeight * 0.30;
+    const cropWidthSource = video.videoWidth * 0.50;  
+    const cropHeightSource = video.videoHeight * 0.15; 
+    const cropX = Math.max(0, (video.videoWidth - cropWidthSource) / 2);
+    const cropY = Math.max(0, (video.videoHeight - cropHeightSource) / 2);
 
-    canvas.width = cropWidth;
-    canvas.height = cropHeight;
+    canvas.width = 300;
+    canvas.height = 60;
 
-    context.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-    preprocessCanvas(canvas);
+    // Vẽ trực tiếp lên canvas hiển thị trên UI (không thông qua Image Base64)
+    context.drawImage(video, cropX, cropY, cropWidthSource, cropHeightSource, 0, 0, canvas.width, canvas.height);
 
     isProcessing = true;
 
     try {
-        let text = "";
-        if (worker) {
-            const res = await worker.recognize(canvas);
-            text = res.data.text || '';
-        } else {
-            const res = await Tesseract.recognize(canvas, 'eng');
-            text = res.data.text || '';
-        }
+        const res = await worker.recognize(canvas);
+        const text = (res.data.text || '').trim();
 
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length >= 2);
-
-        if (lines.length > 0) {
-            let matchedSize = autoMatchExactSize(lines[0]);
+        if (text.length > 0) {
+            let matchedSize = autoMatchExactSize(text);
             
             if (matchedSize) {
                 document.getElementById('livePreview').innerText = "✅ KHỚP CHUẨN: " + matchedSize;
                 document.getElementById('resultBox').value = matchedSize;
                 document.getElementById('status').innerText = "🎯 ĐÃ CHỐT CỠ! Bấm SAVE để lưu.";
                 document.getElementById('status').style.color = "green";
-                isScanning = false; // Tạm dừng khi đã bắt đúng cỡ chuẩn
+                isScanning = false;
             } else {
-                document.getElementById('livePreview').innerText = "👀 Đang rọi: " + lines[0];
+                document.getElementById('livePreview').innerText = "👀 Rọi thấy: " + text;
             }
         }
     } catch (e) {} finally {
@@ -304,17 +312,15 @@ function updateDonHangDropdown() {
         localStorage.setItem('saved_donhang', uniqueDonHang[0]);
     }
 
-    select.onchange = function() {
-        localStorage.setItem('saved_donhang', this.value);
-        onDonHangChange();
-    };
-
+    // Vá lỗi: Kích hoạt ngay sự kiện cập nhật danh sách cỡ khi chuyển Mùa
     onDonHangChange();
 }
 
 function onDonHangChange() {
     const donHang = document.getElementById('donHangSelect').value;
-    const item = rawStyleData.find(i => i.donHang === donHang);
+    localStorage.setItem('saved_donhang', donHang);
+    
+    const item = rawStyleData.find(i => i.donHang === donHang && i.muaSX === selectedSeason);
     if (item && item.danhSachCo) {
         currentValidSizes = item.danhSachCo;
     } else {
@@ -354,6 +360,5 @@ async function saveToGoogleSheets() {
     }
 }
 </script>
-
 </body>
 </html>
