@@ -26,7 +26,6 @@
             background: white; color: #007bff; border-radius: 8px; font-weight: bold; font-size: 16px;
         }
         .btn-season.active { background: #007bff; color: white; }
-        
         #camera-container {
             position: relative; width: 100%; height: 240px; background: #000;
             border-radius: 10px; overflow: hidden; margin-bottom: 12px;
@@ -35,20 +34,17 @@
             width: 100%; height: 100%; object-fit: cover; display: block;
         }
         img#frozenImage { display: none; }
-        
         .scan-guide {
             position: absolute; top: 15%; left: 5%; width: 90%; height: 70%;
             border: 2px dashed #00ff00; pointer-events: none;
             box-shadow: 0 0 0 1000px rgba(0,0,0,0.35);
         }
-        
         .btn-action {
             width: 100%; padding: 14px; color: white; border: none;
             border-radius: 8px; font-weight: bold; font-size: 18px; cursor: pointer;
         }
         .btn-capture { background: #ff9800; margin-bottom: 10px; }
         .btn-save { background: #28a745; }
-        
         #resultSelect {
             border: 2px solid #ff9800; background: #fff3e0; color: #e65100;
         }
@@ -95,7 +91,7 @@
 <canvas id="hiddenCanvas" style="display:none;"></canvas>
 
 <script>
-const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwWazMS6D9k10LXE55SEntzZf4fpEx8VcRXZ907lg-eERZ5cUkbvdEb4o2h5bR747fP/exec';
+const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyadOK1d3ydSfmkPT6o0LszDQVo5bLuDCo6gyYfV9pL4SxMr5OoVKvaIjK_44S_Auxe/exec';
 let rawStyleData = [];
 let selectedSeason = localStorage.getItem('saved_season') || '';
 let savedDonHang = localStorage.getItem('saved_donhang') || '';
@@ -127,7 +123,8 @@ async function initCamera() {
     const video = document.getElementById('webcam');
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false
+            video: { facingMode: { exact: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false
         });
         video.srcObject = stream;
     } catch (err) {
@@ -163,6 +160,12 @@ function resetToCamera() {
     document.getElementById('status').style.color = "green";
 }
 
+function onDonHangChange() {
+    const dh = document.getElementById('donHangSelect').value;
+    localStorage.setItem('saved_donhang', dh);
+    updateSizeDropdown();
+}
+
 function updateSizeDropdown(selectValue = "") {
     const currentDH = document.getElementById('donHangSelect').value;
     const selectRes = document.getElementById('resultSelect');
@@ -188,16 +191,33 @@ function updateSizeDropdown(selectValue = "") {
 
     if (selectValue) {
         const cleanAI = selectValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+        
+        // 1. Tìm xem có dòng nào khớp tuyệt đối không
         let matched = validList.find(v => v.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() === cleanAI);
         
+        // 2. Nếu không khớp tuyệt đối, tìm theo số và từ khóa Giàng (TALL, SHORT, LONG, REGULAR...)
         if (!matched) {
             const numMatch = selectValue.match(/\d+/);
             const coreNum = numMatch ? numMatch[0] : "";
+            
+            const upperAI = selectValue.toUpperCase();
+            let targetGiang = "";
+            if (upperAI.includes("TALL")) targetGiang = "TALL";
+            else if (upperAI.includes("SHORT")) targetGiang = "SHORT";
+            else if (upperAI.includes("LONG")) targetGiang = "LONG";
+            else if (upperAI.includes("REG")) targetGiang = "REG";
+
             if (coreNum) {
+                // Ưu tiên tìm đúng số VÀ đúng giàng
                 matched = validList.find(v => {
                     let vUp = v.toUpperCase();
-                    return vUp.includes(coreNum);
+                    return vUp.includes(coreNum) && targetGiang && vUp.includes(targetGiang);
                 });
+
+                // Nếu không thấy đúng giàng thì lấy dòng chứa số đó
+                if (!matched) {
+                    matched = validList.find(v => v.toUpperCase().includes(coreNum));
+                }
             }
         }
 
@@ -307,7 +327,8 @@ function updateDonHangDropdown() {
 
     uniqueDonHang.forEach(dh => {
         const opt = document.createElement('option');
-        opt.value = dh; opt.innerText = dh;
+        opt.value = dh; 
+        opt.innerText = dh;
         select.appendChild(opt);
     });
 
@@ -317,73 +338,9 @@ function updateDonHangDropdown() {
         select.value = uniqueDonHang[0];
         localStorage.setItem('saved_donhang', uniqueDonHang[0]);
     }
-
-    function updateSizeDropdown(selectValue = "") {
-    const currentDH = document.getElementById('donHangSelect').value;
-    const selectRes = document.getElementById('resultSelect');
-    selectRes.innerHTML = '';
-
-    const item = rawStyleData.find(d => d.muaSX === selectedSeason && d.donHang === currentDH);
-    const validList = item ? (item.danhSachCo || []) : [];
-
-    if (validList.length === 0) {
-        const opt = document.createElement('option');
-        opt.value = "";
-        opt.innerText = "-- Không có dữ liệu size --";
-        selectRes.appendChild(opt);
-        return;
-    }
-
-    validList.forEach(size => {
-        const opt = document.createElement('option');
-        opt.value = size;
-        opt.innerText = size;
-        selectRes.appendChild(opt);
-    });
-
-    if (selectValue) {
-        const cleanAI = selectValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-        
-        // 1. Tìm xem có dòng nào khớp tuyệt đối không
-        let matched = validList.find(v => v.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() === cleanAI);
-        
-        // 2. Nếu không khớp tuyệt đối, tìm theo số và ĐÚNG TỪ KHÓA GIÀNG (TALL, SHORT, LONG, REGULAR...)
-        if (!matched) {
-            const numMatch = selectValue.match(/\d+/);
-            const coreNum = numMatch ? numMatch[0] : "";
-            
-            // Lấy từ khóa giàng mà AI đọc được ở dòng đầu tiên
-            const upperAI = selectValue.toUpperCase();
-            let targetGiang = "";
-            if (upperAI.includes("TALL")) targetGiang = "TALL";
-            else if (upperAI.includes("SHORT")) targetGiang = "SHORT";
-            else if (upperAI.includes("LONG")) targetGiang = "LONG";
-            else if (upperAI.includes("REG")) targetGiang = "REG";
-
-            if (coreNum) {
-                // Ưu tiên tìm đúng số VÀ đúng giàng
-                matched = validList.find(v => {
-                    let vUp = v.toUpperCase();
-                    return vUp.includes(coreNum) && targetGiang && vUp.includes(targetGiang);
-                });
-
-                // Nếu vẫn không thấy đúng giàng thì mới lấy dòng chứa số đó
-                if (!matched) {
-                    matched = validList.find(v => v.toUpperCase().includes(coreNum));
-                }
-            }
-        }
-
-        if (matched) {
-            selectRes.value = matched;
-            document.getElementById('status').innerText = "✨ AI đã chọn chuẩn: " + matched;
-            document.getElementById('status').style.color = "green";
-        } else {
-            document.getElementById('status').innerText = "⚠️ AI đọc được '" + selectValue + "', hãy chọn dòng tương ứng!";
-            document.getElementById('status').style.color = "orange";
-        }
-    }
-    }
+    
+    updateSizeDropdown();
+}
 </script>
 </body>
 </html>
