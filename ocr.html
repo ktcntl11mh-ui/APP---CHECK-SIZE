@@ -318,50 +318,72 @@ function updateDonHangDropdown() {
         localStorage.setItem('saved_donhang', uniqueDonHang[0]);
     }
 
-    updateSizeDropdown();
-}
+    function updateSizeDropdown(selectValue = "") {
+    const currentDH = document.getElementById('donHangSelect').value;
+    const selectRes = document.getElementById('resultSelect');
+    selectRes.innerHTML = '';
 
-function onDonHangChange() {
-    localStorage.setItem('saved_donhang', document.getElementById('donHangSelect').value);
-    resetToCamera();
-}
+    const item = rawStyleData.find(d => d.muaSX === selectedSeason && d.donHang === currentDH);
+    const validList = item ? (item.danhSachCo || []) : [];
 
-async function saveToGoogleSheets() {
-    const donHang = document.getElementById('donHangSelect').value;
-    const vanBan = document.getElementById('resultSelect').value;
-    const status = document.getElementById('status');
-
-    if (!donHang) { alert("Vui lòng chọn Đơn hàng!"); return; }
-    if (!vanBan) { alert("Vui lòng chọn Cỡ x Giàng!"); return; }
-
-    status.innerText = "⏳ Đang lưu về CSDL...";
-    status.style.color = "blue";
-
-    try {
-        await fetch(GOOGLE_SCRIPT_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({ 
-                action: "save",
-                muaSX: selectedSeason, 
-                donHang: donHang, 
-                vanBan: vanBan, 
-                image: "" 
-            })
-        });
-
-        status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG!";
-        status.style.color = "green";
-
-        setTimeout(() => {
-            resetToCamera();
-        }, 600);
-
-    } catch (e) {
-        status.innerText = "❌ Lỗi lưu dữ liệu!";
-        status.style.color = "red";
+    if (validList.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = "";
+        opt.innerText = "-- Không có dữ liệu size --";
+        selectRes.appendChild(opt);
+        return;
     }
-}
+
+    validList.forEach(size => {
+        const opt = document.createElement('option');
+        opt.value = size;
+        opt.innerText = size;
+        selectRes.appendChild(opt);
+    });
+
+    if (selectValue) {
+        const cleanAI = selectValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+        
+        // 1. Tìm xem có dòng nào khớp tuyệt đối không
+        let matched = validList.find(v => v.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() === cleanAI);
+        
+        // 2. Nếu không khớp tuyệt đối, tìm theo số và ĐÚNG TỪ KHÓA GIÀNG (TALL, SHORT, LONG, REGULAR...)
+        if (!matched) {
+            const numMatch = selectValue.match(/\d+/);
+            const coreNum = numMatch ? numMatch[0] : "";
+            
+            // Lấy từ khóa giàng mà AI đọc được ở dòng đầu tiên
+            const upperAI = selectValue.toUpperCase();
+            let targetGiang = "";
+            if (upperAI.includes("TALL")) targetGiang = "TALL";
+            else if (upperAI.includes("SHORT")) targetGiang = "SHORT";
+            else if (upperAI.includes("LONG")) targetGiang = "LONG";
+            else if (upperAI.includes("REG")) targetGiang = "REG";
+
+            if (coreNum) {
+                // Ưu tiên tìm đúng số VÀ đúng giàng
+                matched = validList.find(v => {
+                    let vUp = v.toUpperCase();
+                    return vUp.includes(coreNum) && targetGiang && vUp.includes(targetGiang);
+                });
+
+                // Nếu vẫn không thấy đúng giàng thì mới lấy dòng chứa số đó
+                if (!matched) {
+                    matched = validList.find(v => v.toUpperCase().includes(coreNum));
+                }
+            }
+        }
+
+        if (matched) {
+            selectRes.value = matched;
+            document.getElementById('status').innerText = "✨ AI đã chọn chuẩn: " + matched;
+            document.getElementById('status').style.color = "green";
+        } else {
+            document.getElementById('status').innerText = "⚠️ AI đọc được '" + selectValue + "', hãy chọn dòng tương ứng!";
+            document.getElementById('status').style.color = "orange";
+        }
+    }
+    }
 </script>
 </body>
 </html>
