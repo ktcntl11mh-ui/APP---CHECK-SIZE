@@ -52,7 +52,7 @@
         
         #resultBox {
             width: 100%; height: 55px; padding: 10px; border: 2px solid #007bff;
-            border-radius: 8px; font-size: 20px; font-weight: bold; color: #d9534f; background: #fff;
+            border-radius: 8px; font-size: 22px; font-weight: bold; color: #d9534f; background: #fff;
             text-align: center;
         }
         #status { margin-top: 10px; text-align: center; font-weight: bold; font-size: 16px; }
@@ -84,11 +84,8 @@
     <button class="btn-action btn-capture" id="captureBtn" onclick="handleCaptureOrRetake()">📸 CHỤP BÓC TÁCH DÒNG ĐẦU</button>
 
     <div class="form-group">
-        <label>Chọn hoặc sửa Cỡ x Giàng * (Tự động điền)</label>
-        <!-- Chuyển từ input text sang select dropdown để chọn nhanh và chuẩn xác -->
-        <select id="resultBox">
-            <option value="">-- Vui lòng chụp để nhận diện --</option>
-        </select>
+        <label>Văn bản dòng đầu tiên (Sửa trực tiếp nếu cần) *</label>
+        <input type="text" id="resultBox" placeholder="Dòng chữ đầu tiên sẽ hiện ở đây...">
     </div>
 
     <button class="btn-action btn-save" onclick="saveToGoogleSheets()">💾 SAVE CSDL</button>
@@ -160,7 +157,7 @@ function resetToCamera() {
     btn.style.background = "#17a2b8";
     btn.style.color = "#fff";
     
-    updateResultDropdown(); // Nạp lại danh sách size gốc của đơn hàng
+    document.getElementById('resultBox').value = "";
     document.getElementById('status').innerText = "👀 Căn tem vào khung và bấm CHỤP";
     document.getElementById('status').style.color = "green";
 }
@@ -178,64 +175,6 @@ function preprocessCanvas(canvas) {
     ctx.putImageData(imgData, 0, 0);
 }
 
-// Lấy danh sách size chuẩn của đơn hàng hiện tại
-function getValidSizesForCurrentOrder() {
-    const currentDH = document.getElementById('donHangSelect').value;
-    const item = rawStyleData.find(d => d.muaSX === selectedSeason && d.donHang === currentDH);
-    return item ? (item.danhSachCo || []) : [];
-}
-
-// Cập nhật danh sách size vào ô Dropdown kết quả
-function updateResultDropdown() {
-    const selectRes = document.getElementById('resultBox');
-    selectRes.innerHTML = '';
-    const validList = getValidSizesForCurrentOrder();
-    
-    if (validList.length === 0) {
-        const opt = document.createElement('option');
-        opt.value = "";
-        opt.innerText = "-- Không có dữ liệu size --";
-        selectRes.appendChild(opt);
-        return;
-    }
-
-    validList.forEach(size => {
-        const opt = document.createElement('option');
-        opt.value = size;
-        opt.innerText = size;
-        selectRes.appendChild(opt);
-    });
-}
-
-// Thuật toán so khớp thông minh tìm size phù hợp nhất
-function findBestMatch(ocrText, validList) {
-    if (!validList || validList.length === 0) return "";
-    
-    let bestMatch = validList[0];
-    let highestScore = -1;
-    const cleanOcr = ocrText.replace(/\s+/g, '').toUpperCase();
-
-    validList.forEach(validItem => {
-        const cleanValid = validItem.replace(/\s+/g, '').toUpperCase();
-        if (cleanOcr === cleanValid) {
-            bestMatch = validItem;
-            return;
-        }
-
-        let score = 0;
-        for (let i = 0; i < Math.min(cleanOcr.length, cleanValid.length); i++) {
-            if (cleanOcr[i] === cleanValid[i]) score++;
-        }
-
-        if (score > highestScore) {
-            highestScore = score;
-            bestMatch = validItem;
-        }
-    });
-
-    return bestMatch;
-}
-
 async function captureAndProcess() {
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('hiddenCanvas');
@@ -244,7 +183,7 @@ async function captureAndProcess() {
 
     if (video.videoWidth === 0) return;
 
-    status.innerText = "⚡ Đang nhận diện kích thước...";
+    status.innerText = "⚡ Đang bóc tách dòng đầu tiên...";
     status.style.color = "blue";
 
     const cropX = video.videoWidth * 0.05;
@@ -278,7 +217,7 @@ async function captureAndProcess() {
         if (result.data && result.data.lines) {
             result.data.lines.forEach(line => {
                 let text = line.text.trim();
-                if (text.length >= 2 && line.bbox) {
+                if (text.length > 0 && line.bbox) {
                     linesData.push({
                         text: text,
                         topY: line.bbox.y0
@@ -287,28 +226,23 @@ async function captureAndProcess() {
             });
         }
 
-        let validList = getValidSizesForCurrentOrder();
-
         if (linesData.length > 0) {
+            // Sắp xếp theo chiều dọc từ trên xuống dưới lấy dòng đầu tiên chuẩn xác nhất
             linesData.sort((a, b) => a.topY - b.topY);
-            let topMostLine = linesData[0].text;
-            let cleanFirstLine = topMostLine.replace(/^[^a-zA-Z0-9]+|[^a-zA-Z0-9]+$/g, '').trim();
+            
+            // Lấy nguyên bản text dòng đầu tiên không qua bất kỳ bộ lọc thay thế nào
+            let rawFirstLine = linesData[0].text;
 
-            // Tự động tìm và chọn đúng size trong Dropdown
-            let bestMatch = findBestMatch(cleanFirstLine, validList);
-            if (bestMatch) {
-                document.getElementById('resultBox').value = bestMatch;
-            }
-
-            status.innerText = "✅ ĐÃ TỰ ĐỘNG CHỌN SIZE! Kiểm tra rồi bấm SAVE.";
+            document.getElementById('resultBox').value = rawFirstLine;
+            status.innerText = "✅ ĐÃ LẤY XONG DÒNG ĐẦU! Kiểm tra hoặc chỉnh sửa rồi bấm SAVE.";
             status.style.color = "green";
         } else {
-            status.innerText = "⚠️ Không đọc được chữ, hãy chọn size thủ công bên dưới!";
+            status.innerText = "⚠️ Không nhận diện thấy chữ, hãy gõ tay hoặc CHỤP LẠI!";
             status.style.color = "orange";
         }
 
     } catch (e) {
-        status.innerText = "❌ Lỗi đọc ảnh! Vui lòng chọn size thủ công.";
+        status.innerText = "❌ Lỗi đọc ảnh! Vui lòng nhập thủ công.";
         status.style.color = "red";
     }
 }
@@ -361,8 +295,6 @@ function updateDonHangDropdown() {
         select.value = uniqueDonHang[0];
         localStorage.setItem('saved_donhang', uniqueDonHang[0]);
     }
-
-    updateResultDropdown();
 }
 
 function onDonHangChange() {
@@ -376,7 +308,7 @@ async function saveToGoogleSheets() {
     const status = document.getElementById('status');
 
     if (!donHang) { alert("Vui lòng chọn Đơn hàng!"); return; }
-    if (!vanBan) { alert("Vui lòng chọn Cỡ x Giàng!"); return; }
+    if (!vanBan) { alert("Chưa có nội dung văn bản để lưu!"); return; }
 
     status.innerText = "⏳ Đang lưu...";
     status.style.color = "blue";
