@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>XTL - Lọc Tọa Độ Dòng Đầu</title>
+    <title>XTL - Ưu Tiên Xếp Size Chuẩn Lên Đầu</title>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <style>
         * { box-sizing: border-box; }
@@ -50,10 +50,8 @@
         .btn-capture { background: #17a2b8; margin-bottom: 10px; }
         .btn-save { background: #28a745; }
         
-        #resultBox {
-            width: 100%; height: 55px; padding: 10px; border: 2px solid #007bff;
-            border-radius: 8px; font-size: 22px; font-weight: bold; color: #d9534f; background: #fff;
-            text-align: center;
+        #resultSelect {
+            border: 2px solid #28a745; background: #e8f5e9; color: #155724;
         }
         #status { margin-top: 10px; text-align: center; font-weight: bold; font-size: 16px; }
     </style>
@@ -74,18 +72,21 @@
         </select>
     </div>
 
-    <label>Căn tem vào khung rộng rồi bấm Chụp:</label>
+    <label>Căn tem vào khung rồi bấm Chụp (Không lưu ảnh nặng):</label>
     <div id="camera-container">
         <video id="webcam" autoplay playsinline muted></video>
         <img id="frozenImage" alt="Ảnh đã chụp">
         <div class="scan-guide" id="scanGuide"></div>
     </div>
 
-    <button class="btn-action btn-capture" id="captureBtn" onclick="handleCaptureOrRetake()">📸 CHỤP BÓC TÁCH DÒNG ĐẦU</button>
+    <button class="btn-action btn-capture" id="captureBtn" onclick="handleCaptureOrRetake()">📸 CHỤP & ƯU TIÊN SẮP XẾP SIZE</button>
 
     <div class="form-group">
-        <label>Văn bản dòng đầu tiên (Sửa trực tiếp nếu cần) *</label>
-        <input type="text" id="resultBox" placeholder="Dòng chữ đầu tiên sẽ hiện ở đây...">
+        <label>Cỡ x Giàng (Đã tự động đẩy dòng chuẩn lên ĐẦU) *</label>
+        <!-- Danh sách tự động sắp xếp đưa kết quả khớp nhất lên đầu tiên -->
+        <select id="resultSelect">
+            <option value="">-- Vui lòng chụp tem để hệ thống sắp xếp --</option>
+        </select>
     </div>
 
     <button class="btn-action btn-save" onclick="saveToGoogleSheets()">💾 SAVE CSDL</button>
@@ -115,7 +116,7 @@ window.onload = async function() {
         rawStyleData = json.data || [];
         
         renderSeasons();
-        status.innerText = "👀 Căn tem vào khung rộng và bấm CHỤP!";
+        status.innerText = "👀 Căn tem vào khung và bấm CHỤP!";
         status.style.color = "green";
     } catch (e) {
         status.innerText = "❌ Lỗi kết nối CSDL!";
@@ -153,11 +154,11 @@ function resetToCamera() {
     document.getElementById('scanGuide').style.display = 'block';
     
     const btn = document.getElementById('captureBtn');
-    btn.innerText = "📸 CHỤP BÓC TÁCH DÒNG ĐẦU";
+    btn.innerText = "📸 CHỤP & ƯU TIÊN SẮP XẾP SIZE";
     btn.style.background = "#17a2b8";
     btn.style.color = "#fff";
     
-    document.getElementById('resultBox').value = "";
+    updateSizeDropdown(); // Nạp lại danh sách gốc bình thường
     document.getElementById('status').innerText = "👀 Căn tem vào khung và bấm CHỤP";
     document.getElementById('status').style.color = "green";
 }
@@ -175,6 +176,74 @@ function preprocessCanvas(canvas) {
     ctx.putImageData(imgData, 0, 0);
 }
 
+// Lấy danh sách size gốc của đơn hàng hiện tại
+function getValidSizesForCurrentOrder() {
+    const currentDH = document.getElementById('donHangSelect').value;
+    const item = rawStyleData.find(d => d.muaSX === selectedSeason && d.donHang === currentDH);
+    return item ? (item.danhSachCo || []) : [];
+}
+
+// Đổ danh sách bình thường (khi chưa chụp)
+function updateSizeDropdown(sortedList = null) {
+    const selectRes = document.getElementById('resultSelect');
+    selectRes.innerHTML = '';
+    const validList = sortedList || getValidSizesForCurrentOrder();
+    
+    if (validList.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = "";
+        opt.innerText = "-- Không có dữ liệu size --";
+        selectRes.appendChild(opt);
+        return;
+    }
+
+    validList.forEach(size => {
+        const opt = document.createElement('option');
+        opt.value = size;
+        opt.innerText = size;
+        selectRes.appendChild(opt);
+    });
+}
+
+// THUẬT TOÁN THÔNG MINH: Sắp xếp ưu tiên đưa size/giàng khớp nhất lên đầu danh sách
+function sortSizesByOCR(ocrText, validList) {
+    if (!validList || validList.length === 0) return [];
+    
+    const cleanOcr = ocrText.replace(/\s+/g, ' ').trim().toUpperCase();
+    
+    // Tách lấy con số (ví dụ "28/6" -> lấy "28")
+    const matchNum = cleanOcr.match(/\d+/);
+    const coreNum = matchNum ? matchNum[0] : "";
+    
+    // Xác định giàng R, S, L từ kết quả OCR
+    let targetGiang = "";
+    if (cleanOcr.includes("REG") || cleanOcr.includes(" R ")) targetGiang = "REG";
+    else if (cleanOcr.includes("SHO") || cleanOcr.includes(" S ")) targetGiang = "SHORT";
+    else if (cleanOcr.includes("LON") || cleanOcr.includes(" L ")) targetGiang = "LONG";
+
+    // Chấm điểm từng phần tử trong danh sách chuẩn
+    let scoredList = validList.map(item => {
+        let itemUp = item.toUpperCase();
+        let score = 0;
+
+        // Trùng khớp tuyệt đối 100% -> Điểm cao nhất
+        if (itemUp === cleanOcr) score += 100;
+
+        // Trùng số size cốt lõi (Cực kỳ quan trọng)
+        if (coreNum && itemUp.includes(coreNum)) score += 50;
+
+        // Trùng giàng R/L/S
+        if (targetGiang && itemUp.includes(targetGiang)) score += 30;
+
+        return { name: item, score: score };
+    });
+
+    // Sắp xếp giảm dần theo điểm số (Điểm cao nhất sẽ tự động được đẩy lên vị trí số 0 - ĐẦU TIÊN)
+    scoredList.sort((a, b) => b.score - a.score);
+
+    return scoredList.map(x => x.name);
+}
+
 async function captureAndProcess() {
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('hiddenCanvas');
@@ -183,7 +252,7 @@ async function captureAndProcess() {
 
     if (video.videoWidth === 0) return;
 
-    status.innerText = "⚡ Đang bóc tách dòng đầu tiên...";
+    status.innerText = "⚡ Đang phân tích và sắp xếp danh sách...";
     status.style.color = "blue";
 
     const cropX = video.videoWidth * 0.05;
@@ -217,32 +286,31 @@ async function captureAndProcess() {
         if (result.data && result.data.lines) {
             result.data.lines.forEach(line => {
                 let text = line.text.trim();
-                if (text.length > 0 && line.bbox) {
-                    linesData.push({
-                        text: text,
-                        topY: line.bbox.y0
-                    });
+                if (text.length >= 2 && line.bbox) {
+                    linesData.push({ text: text, topY: line.bbox.y0 });
                 }
             });
         }
 
-        if (linesData.length > 0) {
-            // Sắp xếp theo chiều dọc từ trên xuống dưới lấy dòng đầu tiên chuẩn xác nhất
-            linesData.sort((a, b) => a.topY - b.topY);
-            
-            // Lấy nguyên bản text dòng đầu tiên không qua bất kỳ bộ lọc thay thế nào
-            let rawFirstLine = linesData[0].text;
+        let validList = getValidSizesForCurrentOrder();
 
-            document.getElementById('resultBox').value = rawFirstLine;
-            status.innerText = "✅ ĐÃ LẤY XONG DÒNG ĐẦU! Kiểm tra hoặc chỉnh sửa rồi bấm SAVE.";
+        if (linesData.length > 0) {
+            linesData.sort((a, b) => a.topY - b.topY);
+            let topMostLine = linesData[0].text; // Lấy dòng đầu tiên quét được
+
+            // Sắp xếp lại danh sách: Đưa size/giàng phù hợp nhất lên hàng đầu
+            let sortedList = sortSizesByOCR(topMostLine, validList);
+            updateSizeDropdown(sortedList);
+
+            status.innerText = "✨ Đã xếp size chuẩn lên đầu! Kiểm tra rồi bấm Save.";
             status.style.color = "green";
         } else {
-            status.innerText = "⚠️ Không nhận diện thấy chữ, hãy gõ tay hoặc CHỤP LẠI!";
+            status.innerText = "⚠️ Không rõ chữ, hãy chọn trực tiếp bên dưới!";
             status.style.color = "orange";
         }
 
     } catch (e) {
-        status.innerText = "❌ Lỗi đọc ảnh! Vui lòng nhập thủ công.";
+        status.innerText = "❌ Lỗi nhận diện! Vui lòng chọn thủ công.";
         status.style.color = "red";
     }
 }
@@ -295,6 +363,8 @@ function updateDonHangDropdown() {
         select.value = uniqueDonHang[0];
         localStorage.setItem('saved_donhang', uniqueDonHang[0]);
     }
+
+    updateSizeDropdown();
 }
 
 function onDonHangChange() {
@@ -304,11 +374,11 @@ function onDonHangChange() {
 
 async function saveToGoogleSheets() {
     const donHang = document.getElementById('donHangSelect').value;
-    let vanBan = document.getElementById('resultBox').value.trim();
+    const vanBan = document.getElementById('resultSelect').value;
     const status = document.getElementById('status');
 
     if (!donHang) { alert("Vui lòng chọn Đơn hàng!"); return; }
-    if (!vanBan) { alert("Chưa có nội dung văn bản để lưu!"); return; }
+    if (!vanBan) { alert("Vui lòng chọn Cỡ x Giàng!"); return; }
 
     status.innerText = "⏳ Đang lưu...";
     status.style.color = "blue";
@@ -320,12 +390,12 @@ async function saveToGoogleSheets() {
             body: JSON.stringify({ muaSX: selectedSeason, donHang: donHang, vanBan: vanBan })
         });
 
-        status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG VỀ SHEET!";
+        status.innerText = "🎉 ĐÃ LƯU THÀNH CÔNG!";
         status.style.color = "green";
 
         setTimeout(() => {
             resetToCamera();
-        }, 800);
+        }, 600);
 
     } catch (e) {
         status.innerText = "❌ Lỗi lưu dữ liệu!";
