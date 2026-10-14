@@ -187,9 +187,27 @@ function updateSizeDropdown(selectValue = "") {
     });
 
     if (selectValue) {
-        let matched = validList.find(v => v.toUpperCase().includes(selectValue.toUpperCase()));
+        const cleanAI = selectValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+        let matched = validList.find(v => v.replace(/[^a-zA-Z0-9]/g, "").toUpperCase() === cleanAI);
+        
+        if (!matched) {
+            const numMatch = selectValue.match(/\d+/);
+            const coreNum = numMatch ? numMatch[0] : "";
+            if (coreNum) {
+                matched = validList.find(v => {
+                    let vUp = v.toUpperCase();
+                    return vUp.includes(coreNum);
+                });
+            }
+        }
+
         if (matched) {
             selectRes.value = matched;
+            document.getElementById('status').innerText = "✨ AI đã chọn chuẩn: " + matched;
+            document.getElementById('status').style.color = "green";
+        } else {
+            document.getElementById('status').innerText = "⚠️ AI đọc được '" + selectValue + "', hãy chọn dòng tương ứng!";
+            document.getElementById('status').style.color = "orange";
         }
     }
 }
@@ -240,8 +258,6 @@ async function captureAndSendToAI() {
         const resJson = await response.json();
         if (resJson.status === "success" && resJson.detected) {
             updateSizeDropdown(resJson.detected);
-            status.innerText = "✨ AI đọc xong: " + resJson.detected + " (Kiểm tra lại rồi bấm Save)";
-            status.style.color = "green";
         } else {
             status.innerText = "⚠️ AI không đọc rõ, hãy chọn thủ công bên dưới!";
             status.style.color = "orange";
